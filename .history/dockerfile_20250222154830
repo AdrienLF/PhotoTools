@@ -1,0 +1,25 @@
+# Use Python base image with uv pre-installed
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libsqlite3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy configuration files
+COPY pyproject.toml .
+
+# Install dependencies
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system -r pyproject.toml
+
+# Copy the application code
+COPY sort_photos_ratio.py .
+
+# Create a volume mount point
+VOLUME /data
+
+# Run the application
+CMD ["python", "sort_photos_ratio.py", "--folder", "/data"]
