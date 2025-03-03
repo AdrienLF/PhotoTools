@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "accelerate>=0.26.0",
+    "geopy>=2.4.1",
     "numpy>=2.2.3",
     "openai-clip>=1.0.1",
     "pillow>=11.1.0",
