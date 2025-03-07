@@ -64,6 +64,7 @@ class PhotoBackup:
     def __init__(self):
         self.source_dir = ""
         self.destination_dirs = []
+        self.append_city_name = True
         self.status = {
             "total_files": 0,
             "processed_files": 0,
@@ -213,10 +214,9 @@ class PhotoBackup:
             for image_path in image_files:
                 self.status["current_file"] = os.path.basename(image_path)
 
-                # Get date and location for folder name
                 date_str = self.get_date_from_image(image_path)
-                location = self.get_location_name(image_path)
-                folder_name = f"{date_str} - {location}"
+                location = self.get_location_name(image_path) if self.append_city_name else ""
+                folder_name = f"{date_str} - {location}" if self.append_city_name else date_str
 
                 # Copy file to each destination
                 for dest_dir in self.destination_dirs:
@@ -406,13 +406,14 @@ class PhotoBackupServer:
 
                     backup_instance.source_dir = data['source']
                     backup_instance.destination_dirs = data['destinations']
+                    backup_instance.append_city_name = data.get('append_city_name', True)  # added line
 
-                    # Start backup in a separate thread
                     threading.Thread(target=backup_instance.backup_images).start()
 
-                    # 4. Also store these to config
+                    # Store to config
                     config_dict["source"] = data['source']
                     config_dict["destinations"] = data['destinations']
+                    config_dict["append_city_name"] = data.get("append_city_name", True)
                     save_config(config_dict)
 
                     self.send_response(200)
@@ -420,6 +421,7 @@ class PhotoBackupServer:
                     self.end_headers()
                     self.wfile.write(json.dumps({'status': 'started'}).encode())
                     return
+
 
                 # 5. Another optional endpoint to save config whenever needed
                 elif self.path == '/save-config':
@@ -490,6 +492,11 @@ def create_web_files():
                 </div>
                 <button id="add-destination">Add Another Destination</button>
             </div>
+            <div class="form-group">
+    <input type="checkbox" id="append-city" checked>
+    <label for="append-city">Append City Name to Folder</label>
+</div>
+
 
             <button id="start-backup" class="primary-button">Start Backup</button>
         </div>
@@ -837,35 +844,31 @@ document.querySelectorAll('.browse-destination').forEach(button => {
     }
 
     // Start backup
-    startBackup.addEventListener('click', function() {
-        // Validate inputs
-        if (!sourceFolder.value) {
-            alert('Please select a source folder');
-            return;
-        }
+   const appendCityCheckbox = document.getElementById('append-city');
 
-        const destinations = [];
-        document.querySelectorAll('.destination-folder').forEach(input => {
-            if (input.value) {
-                destinations.push(input.value);
-            }
-        });
+startBackup.addEventListener('click', function() {
+    if (!sourceFolder.value) {
+        alert('Please select a source folder');
+        return;
+    }
 
-        if (destinations.length === 0) {
-            alert('Please select at least one destination folder');
-            return;
-        }
+    const destinations = Array.from(document.querySelectorAll('.destination-folder'))
+        .map(input => input.value).filter(Boolean);
 
-        // Start backup
-        fetch('/start-backup', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                source: sourceFolder.value,
-                destinations: destinations
-            })
+    if (destinations.length === 0) {
+        alert('Please select at least one destination folder');
+        return;
+    }
+
+    const appendCityName = document.getElementById('append-city').checked;
+
+    fetch('/start-backup', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            source: sourceFolder.value,
+            destinations: destinations,
+            append_city_name: appendCityName.checked  // send this state
         })
         .then(response => response.json())
         .then(data => {
