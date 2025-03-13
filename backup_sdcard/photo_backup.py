@@ -13,14 +13,18 @@ import threading
 import webbrowser
 import platform
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+import queue
 
 try:
     import reverse_geocoder as rg
+
 except ImportError:
     print("Installing required dependencies...")
     import subprocess
     subprocess.check_call([sys.executable, "-m", "pip", "install", "reverse_geocoder", "exifread"])
     import reverse_geocoder as rg
+
 
 import socket
 
@@ -48,7 +52,7 @@ def load_config():
     if os.path.exists(config_path):
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
-    return {"source": "", "destinations": []}
+    return {"source": "", "destinations": [], "append_location": True, "folder_suffix": ""}
 
 def save_config(config):
     """
@@ -64,7 +68,8 @@ class PhotoBackup:
     def __init__(self):
         self.source_dir = ""
         self.destination_dirs = []
-        self.append_city_name = True
+        self.append_location = True
+        self.folder_suffix = ""
         self.status = {
             "total_files": 0,
             "processed_files": 0,
@@ -76,13 +81,23 @@ class PhotoBackup:
             "complete": False,
             "error": None
         }
+        # Cache for location data to avoid redundant lookups
+        self.location_cache = {}
+        # Cache for file hashes to avoid recalculating
+        self.hash_cache = {}
+        # Cache for date information
+        self.date_cache = {}
+        # Status update queue
+        self.status_queue = queue.Queue()
+        # Number of worker threads
+        self.num_workers = max(4, os.cpu_count() or 4)
 
     def get_exif_data(self, image_path):
         """Extract EXIF data from an image using exifread."""
         exif_data = {}
         try:
             with open(image_path, 'rb') as img_file:
-                tags = exifread.process_file(img_file)
+                tags = exifread.process_file(img_file, details=False)  # Faster with details=False
                 for tag, value in tags.items():
                     exif_data[tag] = value
         except Exception:
@@ -122,12 +137,17 @@ class PhotoBackup:
         """Get location name from GPS coordinates in image.
            When connected to the internet, uses geopy's Nominatim to get ward-level detail.
            Otherwise, falls back to reverse_geocoder."""
+        # Check cache first
+        if image_path in self.location_cache:
+            return self.location_cache[image_path]
+
         try:
             exif_data = self.get_exif_data(image_path)
             gps_info = self.get_gps_data(exif_data)
             coords = self.get_coordinates(gps_info)
 
             if not coords:
+                self.location_cache[image_path] = "Unknown"
                 return "Unknown"
 
             # Try to use online geocoding for detailed ward info if connected
@@ -145,58 +165,173 @@ class PhotoBackup:
                     address = location.raw["address"]
                     # Attempt to use ward-level details; for Japanese addresses, this might be "city_district" or "suburb"
                     if "city_district" in address:
-                        return address["city_district"]
+                        result = address["city_district"]
+                        self.location_cache[image_path] = result
+                        return result
                     elif "suburb" in address:
-                        return address["suburb"]
+                        result = address["suburb"]
+                        self.location_cache[image_path] = result
+                        return result
                     elif "town" in address:
-                        return address["town"]
+                        result = address["town"]
+                        self.location_cache[image_path] = result
+                        return result
                     elif "city" in address:
-                        return address["city"]
+                        result = address["city"]
+                        self.location_cache[image_path] = result
+                        return result
                     elif "county" in address:
-                        return address["county"]
+                        result = address["county"]
+                        self.location_cache[image_path] = result
+                        return result
                 # If the online lookup fails, fall back to reverse_geocoder
 
             # Fallback to reverse_geocoder if offline or if online lookup fails
             result = rg.search(coords)[0]
             if result.get('name'):
-                return result['name']
+                location = result['name']
             elif result.get('admin1'):
-                return result['admin1']
+                location = result['admin1']
             else:
-                return result['cc']
+                location = result['cc']
+
+            self.location_cache[image_path] = location
+            return location
         except Exception:
+            self.location_cache[image_path] = "Unknown"
             return "Unknown"
 
     def get_date_from_image(self, image_path):
         """Extract date from image metadata."""
+        # Check cache first
+        if image_path in self.date_cache:
+            return self.date_cache[image_path]
+
         try:
             exif_data = self.get_exif_data(image_path)
             date_tag = 'EXIF DateTimeOriginal'
             if date_tag in exif_data:
                 date_str = str(exif_data[date_tag])
                 date_obj = datetime.datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
-                return date_obj.strftime('%Y-%m-%d')
+                result = date_obj.strftime('%Y-%m-%d')
             else:
                 mod_time = os.path.getmtime(image_path)
                 date_obj = datetime.datetime.fromtimestamp(mod_time)
-                return date_obj.strftime('%Y-%m-%d')
-        except Exception:
-            return datetime.datetime.now().strftime('%Y-%m-%d')
+                result = date_obj.strftime('%Y-%m-%d')
 
+            self.date_cache[image_path] = result
+            return result
+        except Exception:
+            result = datetime.datetime.now().strftime('%Y-%m-%d')
+            self.date_cache[image_path] = result
+            return result
 
     def calculate_file_hash(self, file_path):
         """Calculate SHA-256 hash of a file"""
+        # Check cache first
+        if file_path in self.hash_cache:
+            return self.hash_cache[file_path]
+
         hash_sha256 = hashlib.sha256()
         with open(file_path, 'rb') as f:
             for chunk in iter(lambda: f.read(4096), b''):
                 hash_sha256.update(chunk)
-        return hash_sha256.hexdigest()
+        result = hash_sha256.hexdigest()
+        self.hash_cache[file_path] = result
+        return result
+
+    def process_image(self, image_path):
+        """Process a single image file"""
+        try:
+            # Get date and location for folder name
+            date_str = self.get_date_from_image(image_path)
+            folder_name = date_str
+            
+            if self.append_location:
+                location = self.get_location_name(image_path)
+                folder_name = f"{date_str} - {location}"
+            elif self.folder_suffix:
+                folder_name = f"{date_str} - {self.folder_suffix}"
+
+            # Calculate source file hash only once
+            source_hash = None
+            file_size = os.path.getsize(image_path)
+
+            # Copy file to each destination
+            for dest_dir in self.destination_dirs:
+                target_dir = os.path.join(dest_dir, folder_name)
+                os.makedirs(target_dir, exist_ok=True)
+
+                target_path = os.path.join(target_dir, os.path.basename(image_path))
+
+                # Skip if target exists and has same size (quick check)
+                if os.path.exists(target_path):
+                    if os.path.getsize(target_path) == file_size:
+                        # Only calculate hashes if sizes match (optimization)
+                        if source_hash is None:
+                            source_hash = self.calculate_file_hash(image_path)
+                        target_hash = self.calculate_file_hash(target_path)
+
+                        if source_hash == target_hash:
+                            continue  # Skip this file, it's identical
+
+                # If we get here, we need to copy the file
+                shutil.copy2(image_path, target_path)
+
+            # Update progress through queue
+            self.status_queue.put({
+                "file": os.path.basename(image_path),
+                "size": file_size
+            })
+
+            return True
+        except Exception as e:
+            self.status_queue.put({
+                "error": f"Error processing {os.path.basename(image_path)}: {str(e)}",
+                "size": 0
+            })
+            return False
+
+    def status_updater(self):
+        """Thread to update status information"""
+        while not self.status["complete"]:
+            try:
+                update = self.status_queue.get(timeout=0.5)
+
+                if "error" in update:
+                    print(update["error"])  # Log the error
+                else:
+                    self.status["current_file"] = update["file"]
+                    self.status["processed_files"] += 1
+                    self.status["bytes_processed"] += update["size"]
+
+                # Calculate estimated time remaining
+                elapsed = time.time() - self.status["start_time"]
+                if self.status["processed_files"] > 0 and elapsed > 0:
+                    files_per_sec = self.status["processed_files"] / elapsed
+                    remaining_files = self.status["total_files"] - self.status["processed_files"]
+                    if files_per_sec > 0:
+                        est_seconds = remaining_files / files_per_sec
+                        m, s = divmod(int(est_seconds), 60)
+                        h, m = divmod(m, 60)
+                        self.status["est_time_remaining"] = f"{h:d}:{m:02d}:{s:02d}"
+                    else:
+                        self.status["est_time_remaining"] = "Calculating..."
+
+                self.status_queue.task_done()
+            except queue.Empty:
+                pass  # No updates in queue
 
     def backup_images(self):
-        """Perform the backup operation"""
+        """Perform the backup operation using multiple threads"""
         self.status["start_time"] = time.time()
         self.status["complete"] = False
         self.status["error"] = None
+
+        # Clear caches
+        self.location_cache = {}
+        self.hash_cache = {}
+        self.date_cache = {}
 
         try:
             # Get list of all image files
@@ -211,43 +346,21 @@ class PhotoBackup:
             self.status["processed_files"] = 0
             self.status["bytes_processed"] = 0
 
-            for image_path in image_files:
-                self.status["current_file"] = os.path.basename(image_path)
+            # Start status updater thread
+            status_thread = threading.Thread(target=self.status_updater)
+            status_thread.daemon = True
+            status_thread.start()
 
-                date_str = self.get_date_from_image(image_path)
-                location = self.get_location_name(image_path) if self.append_city_name else ""
-                folder_name = f"{date_str} - {location}" if self.append_city_name else date_str
+            # Process files with thread pool
+            with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
+                executor.map(self.process_image, image_files)
 
-                # Copy file to each destination
-                for dest_dir in self.destination_dirs:
-                    target_dir = os.path.join(dest_dir, folder_name)
-                    os.makedirs(target_dir, exist_ok=True)
-
-                    target_path = os.path.join(target_dir, os.path.basename(image_path))
-
-                    # Only copy if the file doesn't exist or has a different hash
-                    if not os.path.exists(target_path) or \
-                            self.calculate_file_hash(image_path) != self.calculate_file_hash(target_path):
-                        shutil.copy2(image_path, target_path)
-
-                # Update progress
-                self.status["processed_files"] += 1
-                self.status["bytes_processed"] += os.path.getsize(image_path)
-
-                # Calculate estimated time remaining
-                elapsed = time.time() - self.status["start_time"]
-                if self.status["processed_files"] > 0:
-                    files_per_sec = self.status["processed_files"] / elapsed
-                    remaining_files = self.status["total_files"] - self.status["processed_files"]
-                    if files_per_sec > 0:
-                        est_seconds = remaining_files / files_per_sec
-                        m, s = divmod(int(est_seconds), 60)
-                        h, m = divmod(m, 60)
-                        self.status["est_time_remaining"] = f"{h:d}:{m:02d}:{s:02d}"
-                    else:
-                        self.status["est_time_remaining"] = "Calculating..."
-
+            # Wait for status queue to be empty
+            self.status_queue.join()
             self.status["complete"] = True
+
+            # Play completion sound
+            os.system("Et voilà, tous les fichiers sont backupés. ")
 
         except Exception as e:
             self.status["error"] = str(e)
@@ -299,6 +412,10 @@ class PhotoBackupServer:
 
         # If config has remembered destinations, store them
         self.backup.destination_dirs = self.config.get("destinations", [])
+
+        # Set append_location and folder_suffix from config
+        self.backup.append_location = self.config.get("append_location", True)
+        self.backup.folder_suffix = self.config.get("folder_suffix", "")
 
         self.server = None
         self.thread = None
@@ -406,14 +523,17 @@ class PhotoBackupServer:
 
                     backup_instance.source_dir = data['source']
                     backup_instance.destination_dirs = data['destinations']
-                    backup_instance.append_city_name = data.get('append_city_name', True)  # added line
+                    backup_instance.append_location = data.get('append_location', True)
+                    backup_instance.folder_suffix = data.get('folder_suffix', '')
 
+                    # Start backup in a separate thread
                     threading.Thread(target=backup_instance.backup_images).start()
 
-                    # Store to config
+                    # 4. Also store these to config
                     config_dict["source"] = data['source']
                     config_dict["destinations"] = data['destinations']
-                    config_dict["append_city_name"] = data.get("append_city_name", True)
+                    config_dict["append_location"] = data.get('append_location', True)
+                    config_dict["folder_suffix"] = data.get('folder_suffix', '')
                     save_config(config_dict)
 
                     self.send_response(200)
@@ -421,7 +541,6 @@ class PhotoBackupServer:
                     self.end_headers()
                     self.wfile.write(json.dumps({'status': 'started'}).encode())
                     return
-
 
                 # 5. Another optional endpoint to save config whenever needed
                 elif self.path == '/save-config':
@@ -432,11 +551,15 @@ class PhotoBackupServer:
                     # Update config
                     config_dict["source"] = data.get('source', '')
                     config_dict["destinations"] = data.get('destinations', [])
+                    config_dict["append_location"] = data.get('append_location', True)
+                    config_dict["folder_suffix"] = data.get('folder_suffix', '')
                     save_config(config_dict)
 
                     # Also update the backup instance
                     backup_instance.source_dir = config_dict["source"]
                     backup_instance.destination_dirs = config_dict["destinations"]
+                    backup_instance.append_location = config_dict["append_location"]
+                    backup_instance.folder_suffix = config_dict["folder_suffix"]
 
                     self.send_response(200)
                     self.send_header('Content-type', 'application/json')
@@ -448,7 +571,6 @@ class PhotoBackupServer:
                 self.end_headers()
 
         return PhotoBackupHandler
-
 
 # Create the web interface files
 def create_web_files():
@@ -492,11 +614,18 @@ def create_web_files():
                 </div>
                 <button id="add-destination">Add Another Destination</button>
             </div>
-            <div class="form-group">
-    <input type="checkbox" id="append-city" checked>
-    <label for="append-city">Append City Name to Folder</label>
-</div>
 
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="append-location" checked>
+                    Append location to folder names
+                </label>
+            </div>
+
+            <div class="form-group" id="folder-suffix-group">
+                <label for="folder-suffix">Custom Folder Suffix:</label>
+                <input type="text" id="folder-suffix" placeholder="Enter custom suffix">
+            </div>
 
             <button id="start-backup" class="primary-button">Start Backup</button>
         </div>
@@ -583,6 +712,18 @@ label {
     font-weight: 500;
 }
 
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+}
+
 .input-with-button {
     display: flex;
     width: 100%;
@@ -592,9 +733,17 @@ input[type="text"] {
     flex-grow: 1;
     padding: 12px 15px;
     border: 1px solid #ddd;
-    border-radius: 6px 0 0 6px;
+    border-radius: 6px;
     background-color: #f9f9f9;
+}
+
+input[type="text"][readonly] {
     cursor: default;
+}
+
+#folder-suffix {
+    background-color: white;
+    cursor: text;
 }
 
 button {
@@ -744,10 +893,12 @@ button:hover {
     const errorText = document.getElementById('error-text');
     const newBackup = document.getElementById('new-backup');
     const tryAgain = document.getElementById('try-again');
+    const appendLocation = document.getElementById('append-location');
+
     // Add event listeners to initial destination browse buttons
-document.querySelectorAll('.browse-destination').forEach(button => {
-    button.addEventListener('click', browseDestination);
-});
+    document.querySelectorAll('.browse-destination').forEach(button => {
+        button.addEventListener('click', browseDestination);
+    });
 
     // On page load, fetch config and populate
     fetch('/get-config')
@@ -766,6 +917,8 @@ document.querySelectorAll('.browse-destination').forEach(button => {
                 // Ensure we have one row if empty
                 updateRemoveButtons();
             }
+            // Set append location checkbox
+            appendLocation.checked = config.append_location !== false;
         })
         .catch(err => console.error('Could not load config:', err));
 
@@ -844,31 +997,38 @@ document.querySelectorAll('.browse-destination').forEach(button => {
     }
 
     // Start backup
-   const appendCityCheckbox = document.getElementById('append-city');
+    startBackup.addEventListener('click', function() {
+        // Validate inputs
+        if (!sourceFolder.value) {
+            alert('Please select a source folder');
+            return;
+        }
 
-startBackup.addEventListener('click', function() {
-    if (!sourceFolder.value) {
-        alert('Please select a source folder');
-        return;
-    }
+        const destinations = [];
+        document.querySelectorAll('.destination-folder').forEach(input => {
+            if (input.value) {
+                destinations.push(input.value);
+            }
+        });
 
-    const destinations = Array.from(document.querySelectorAll('.destination-folder'))
-        .map(input => input.value).filter(Boolean);
+        if (destinations.length === 0) {
+            alert('Please select at least one destination folder');
+            return;
+        }
 
-    if (destinations.length === 0) {
-        alert('Please select at least one destination folder');
-        return;
-    }
+        // Start backup
+        fetch('/start-backup', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+    source: sourceFolder.value,
+    destinations: destinations,
+    append_location: appendLocation.checked,
+    folder_suffix: document.getElementById('folder-suffix').value
+})
 
-    const appendCityName = document.getElementById('append-city').checked;
-
-    fetch('/start-backup', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            source: sourceFolder.value,
-            destinations: destinations,
-            append_city_name: appendCityName.checked  // send this state
         })
         .then(response => response.json())
         .then(data => {
