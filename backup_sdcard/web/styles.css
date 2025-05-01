@@ -1,0 +1,307 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+body {
+    background-color: #f5f5f7;
+    color: #333;
+    line-height: 1.6;
+    padding-bottom: 50px; /* Ensure content doesn't touch bottom */
+}
+
+.container {
+    max-width: 700px; /* Slightly narrower */
+    margin: 30px auto; /* Reduced top margin */
+    padding: 20px;
+    background-color: white;
+    border-radius: 12px;
+    box-shadow: 0 4px Gist Coplot20px rgba(0, 0, 0, 0.08);
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 25px;
+    color: #1d1d1f;
+    font-size: 1.8em;
+}
+
+h2 {
+    margin-bottom: 15px;
+    color: #1d1d1f;
+    font-size: 1.4em;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+}
+
+.setup-panel, .progress-panel {
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+.form-group:last-child {
+    margin-bottom: 0;
+}
+
+
+label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    font-size: 0.95em;
+}
+
+.input-with-button {
+    display: flex;
+    width: 100%;
+}
+
+input[type="text"], input[type="text"]:read-only {
+    flex-grow: 1;
+    padding: 10px 12px; /* Slightly smaller padding */
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background-color: #fff; /* White background */
+    font-size: 0.95em;
+    color: #333;
+}
+input[type="text"]:read-only {
+     background-color: #f8f8f8; /* Slightly grey for readonly */
+     cursor: default;
+}
+
+
+button {
+    padding: 10px 18px; /* Adjust padding */
+    background-color: #e9e9ed; /* Lighter grey */
+    color: #333;
+    border: 1px solid #ccc;
+    border-left: none;
+    border-radius: 0 6px 6px 0;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    font-size: 0.9em;
+    white-space: nowrap; /* Prevent browse button text wrapping */
+}
+button:hover {
+    background-color: #dcdce1;
+}
+
+.primary-button {
+    display: block;
+    width: 100%;
+    padding: 12px 20px;
+    background-color: #0071e3;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 1em;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    margin-top: 15px; /* Space above primary button */
+}
+.primary-button:hover {
+    background-color: #0077ed;
+}
+.primary-button:disabled {
+    background-color: #a0cffc; /* Lighter blue when disabled */
+    cursor: not-allowed;
+}
+
+
+.destination-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.destination-row:last-child {
+     margin-bottom: 0;
+}
+
+.remove-destination {
+    margin-left: 8px;
+    width: 32px; /* Smaller remove button */
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background-color: #ff5c5c; /* Adjusted red */
+    color: white;
+    font-size: 16px; /* Smaller X */
+    font-weight: bold;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    flex-shrink: 0; /* Prevent shrinking */
+    padding: 0; /* Reset padding */
+}
+.remove-destination:hover {
+    background-color: #ff3b30;
+}
+
+#add-destination {
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    background-color: #f8f8f8;
+    width: auto;
+    padding: 8px 15px;
+    font-size: 0.9em;
+    margin-top: 8px; /* Space above add button */
+    border-left: 1px solid #ccc; /* Add left border back */
+}
+#add-destination:hover {
+     background-color: #eee;
+}
+
+
+/* Naming Options */
+.naming-options {
+    border: 1px solid #eee;
+    border-radius: 6px;
+    padding: 15px;
+    margin-top: 10px;
+}
+.naming-options legend {
+    font-weight: 500;
+    padding: 0 5px;
+    font-size: 0.95em;
+}
+.radio-group {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    gap: 8px; /* Space between radio and label/input */
+}
+.radio-group:last-child {
+     margin-bottom: 0;
+}
+.radio-label {
+    display: flex; /* Use flex for alignment */
+    align-items: center;
+    gap: 6px; /* Space between radio button and text */
+    margin-bottom: 0; /* Remove default label margin */
+    cursor: pointer;
+    font-weight: normal; /* Normal weight for radio labels */
+    font-size: 0.95em;
+}
+.radio-label input[type="radio"] {
+    margin-right: 4px; /* Small space */
+    flex-shrink: 0;
+     /* Custom styling could go here */
+}
+.radio-label small {
+     color: #666;
+     font-size: 0.85em;
+}
+#folder-suffix {
+    margin-left: 5px; /* Space after radio group */
+    max-width: 200px; /* Limit width */
+    flex-grow: 0; /* Don't let it grow too much */
+    padding: 8px 10px; /* Smaller padding */
+    font-size: 0.9em;
+}
+#folder-suffix:disabled {
+    background-color: #f0f0f0;
+    cursor: not-allowed;
+    border-color: #ddd;
+}
+
+
+/* Progress Panel */
+.progress-container {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+    gap: 15px;
+}
+
+.progress-bar {
+    flex-grow: 1;
+    height: 12px; /* Slightly thicker bar */
+    background-color: #e9e9ed;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background-color: #0071e3;
+    width: 0%;
+    transition: width 0.2s ease-out; /* Faster transition */
+    border-radius: 6px; /* Match parent */
+}
+
+.progress-text {
+    font-weight: 500;
+    min-width: 50px; /* Ensure space for 100.0% */
+    text-align: right;
+    font-size: 0.95em;
+}
+
+#status-message {
+    font-weight: 500;
+    margin-bottom: 15px;
+    display: block; /* Make it block level */
+}
+
+.progress-details {
+    font-size: 0.9em;
+    color: #555;
+    margin-bottom: 15px;
+    padding-left: 5px; /* Indent details slightly */
+}
+.progress-details p {
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between; /* Align text left/right */
+    gap: 10px; /* Space between label and value */
+}
+.progress-details p span {
+    text-align: right; /* Align values to the right */
+    min-width: 80px; /* Give space for values */
+}
+
+
+.completion-message, .error-message {
+    text-align: center;
+    padding: 20px 0 10px 0; /* Adjust padding */
+}
+
+.completion-message p {
+    color: #34c759;
+    font-weight: 500;
+    font-size: 1.2em; /* Slightly larger */
+    margin-bottom: 15px;
+}
+
+.error-message p {
+    color: #ff3b30;
+    font-weight: 500;
+    font-size: 1.1em;
+    margin-bottom: 15px;
+}
+.error-message span {
+     display: block; /* Put error text on new line */
+     font-weight: normal;
+     font-size: 0.95em;
+     margin-top: 5px;
+     max-height: 100px; /* Limit error display height */
+     overflow-y: auto; /* Allow scrolling for long errors */
+     background-color: #fff0f0; /* Light red background */
+     padding: 5px;
+     border-radius: 4px;
+     border: 1px solid #ffcccc;
+}
+
+
+#new-backup, #try-again {
+    max-width: 250px; /* Wider button */
+    margin: 0 auto;
+}

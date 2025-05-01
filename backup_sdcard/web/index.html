@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Backup Tool</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Photo Backup Tool</h1>
+
+        <div class="setup-panel">
+            <div class="form-group">
+                <label for="source-folder">Source Folder:</label>
+                <div class="input-with-button">
+                    <input type="text" id="source-folder" placeholder="Select source folder" readonly>
+                    <button id="browse-source">Browse</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Destination Folders:</label>
+                <div id="destinations-container">
+                    <!-- Destination rows added dynamically -->
+                </div>
+                <button id="add-destination">Add Another Destination</button>
+            </div>
+
+            <fieldset class="form-group naming-options">
+                <legend>Folder Naming Options:</legend>
+                <div class="radio-group">
+                    <label class="radio-label">
+                        <input type="radio" name="naming_option" id="append-location" value="location" checked>
+                        Date + Location <small>(Needs Internet/GPS)</small>
+                    </label>
+                </div>
+                 <div class="radio-group">
+                    <label class="radio-label">
+                        <input type="radio" name="naming_option" id="use-suffix" value="suffix">
+                        Date + Custom Suffix
+                    </label>
+                    <input type="text" id="folder-suffix" placeholder="Enter custom suffix" disabled>
+                 </div>
+                 <div class="radio-group">
+                     <label class="radio-label">
+                         <input type="radio" name="naming_option" id="date-only" value="date">
+                         Date Only
+                     </label>
+                 </div>
+            </fieldset>
+
+
+            <button id="start-backup" class="primary-button">Start Backup</button>
+        </div>
+
+        <div class="progress-panel" style="display: none;">
+            <h2>Backup Progress</h2>
+
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill"></div>
+                </div>
+                <div class="progress-text">0%</div>
+            </div>
+
+            <p><strong>Status:</strong> <span id="status-message">Initializing...</span></p>
+
+            <div class="progress-details">
+                <p>Current file: <span id="current-file">-</span></p>
+                <p>Files: <span id="processed-files">0</span>/<span id="total-files">0</span></p>
+                <p>Size: <span id="processed-size">0 MB</span>/<span id="total-size">0 MB</span></p>
+                <p>Estimated time remaining: <span id="time-remaining">Calculating...</span></p>
+            </div>
+
+            <div class="completion-message" style="display: none;">
+                <p>✅ Backup completed successfully!</p>
+                <button id="new-backup" class="primary-button">Start New Backup</button>
+            </div>
+
+            <div class="error-message" style="display: none;">
+                <p>❌ Error: <span id="error-text"></span></p>
+                <button id="try-again" class="primary-button">Configure New Backup</button> <!-- Changed text -->
+            </div>
+        </div>
+    </div>
+
+    <script src="scripts.js"></script>
+</body>
+</html>

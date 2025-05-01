@@ -1,2 +1,4 @@
 .idea
 image_analysis.db
+/focus_stack/images/**
+/japon/tokyo_ward_titles/**

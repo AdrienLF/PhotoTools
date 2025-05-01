@@ -1,0 +1,9 @@
+{
+    "source": "/Volumes/Untitled",
+    "destinations": [
+        "/Volumes/Vertical/JAPON",
+        "/Volumes/Horizontal/JAPON"
+    ],
+    "append_location": false,
+    "folder_suffix": "Hakone"
+}
